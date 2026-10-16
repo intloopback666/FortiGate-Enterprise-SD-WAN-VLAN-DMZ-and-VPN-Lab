@@ -1,0 +1,581 @@
+---------------------------------------------------------
+****FGT-Configurations****
+---------------------------------------------------------
+config system global
+    set hostname FGT-1
+    set timezone 28
+    set strong-crypto enable
+    set admin-lockout-threshold 3
+    set admin-lockout-duration 300
+end
+config system ntp
+    set ntpsync enable
+    set type custom
+    config ntpserver
+        edit 1
+            set server "pool.ntp.org"
+        next
+    end
+end
+
+---------------------------------------------------------
+config system interface
+    edit "port1"
+        set alias "WAN1-ISP1"
+        set role wan
+        set mode static
+        set ip 172.16.1.2 255.255.255.252
+        set allowaccess ping
+    next
+
+    edit "port2"
+        set alias "WAN2-ISP2"
+        set role wan
+        set mode static
+        set ip 172.16.2.2 255.255.255.252
+        set allowaccess ping
+    next
+
+    edit "port3"
+        set alias "LAN-8021Q-TRUNK"
+        set role lan
+        set allowaccess ping
+    next
+
+    edit "port4"
+        set alias "DMZ"
+        set role dmz
+        set ip 10.10.40.1 255.255.255.0
+        set allowaccess ping
+    next
+
+    edit "port5"
+        set alias "MGMT"
+        set role lan
+        set ip 192.168.243.131 255.255.255.0
+        set allowaccess ping https ssh http
+    next
+
+    edit "VLAN100"
+	set vdom "root"
+        set alias "USERS-VLAN100"
+        set interface "port3"
+        set vlanid 100
+        set ip 10.100.0.1 255.255.255.0
+        set allowaccess ping
+    next
+
+    edit "VLAN200"
+	set vdom "root"
+        set alias "USERS-VLAN200"
+        set interface "port3"
+        set vlanid 200
+        set ip 10.200.0.1 255.255.255.0
+        set allowaccess ping
+    next
+
+    edit "VLAN300"
+	set vdom "root"
+        set alias "USERS-VLAN300"
+        set interface "port3"
+        set vlanid 300
+        set ip 10.30.0.1 255.255.255.0
+        set allowaccess ping
+    next
+
+    edit "loopback"
+	set vdom "root"
+        set type loopback
+        set ip 10.255.255.1 255.255.255.255
+        set allowaccess ping https ssh
+    next
+end
+
+---------------------------------------------------------
+
+config system interface
+    edit "VLAN100"
+        set dhcp-relay-service enable
+        set dhcp-relay-ip 192.168.243.140
+    next
+
+    edit "VLAN200"
+        set dhcp-relay-service enable
+        set dhcp-relay-ip 192.168.243.140
+    next
+
+    edit "VLAN300"
+        set dhcp-relay-service enable
+        set dhcp-relay-ip 192.168.243.140
+    next
+end
+
+
+---------------------------------------------------------
+
+config system sdwan
+    set status enable
+
+    config members
+        edit 1
+            set interface "port1"
+            set gateway 172.16.1.1
+            set priority 1
+        next
+
+        edit 2
+            set interface "port2"
+            set gateway 172.16.2.1
+            set priority 2
+        next
+    end
+
+    config health-check
+        edit "internet_health"
+            set server "1.1.1.1" "8.8.8.8"
+            set protocol ping
+            set members 1 2
+            set interval 1000
+            set failtime 5
+            set recoverytime 5
+        next
+    end
+
+    config service
+        edit 1
+            set name "Default-Internet-Failover"
+            set mode priority
+            set dst "all"
+            set priority-members 1 2
+            set health-check "internet_health"
+        next
+    end
+end
+
+
+config router static
+    edit 1
+        set distance 1
+        set sdwan-zone "virtual-wan-link"
+    next
+end
+
+
+---------------------------------------------------------
+
+get system sdwan status
+diagnose sys sdwan health_check
+get router info routing-table all
+get system interface physical
+---------------------------------------------------------
+
+config firewall address
+    edit "NET_VLAN100"
+        set subnet 10.100.0.0 255.255.255.0
+    next
+
+    edit "NET_VLAN200"
+        set subnet 10.200.0.0 255.255.255.0
+    next
+
+    edit "NET_VLAN300"
+        set subnet 10.30.0.0 255.255.255.0
+    next
+
+    edit "NET_MGMT"
+        set subnet 192.168.243.0 255.255.255.0
+    next
+
+    edit "NET_DMZ"
+        set subnet 10.10.40.0 255.255.255.0
+    next
+
+    edit "AD_DNS_DHCP"
+        set subnet 10.10.10.10 255.255.255.255
+    next
+
+    edit "DMZ_WEB01"
+        set subnet 10.10.40.10 255.255.255.255
+    next
+
+    edit "SSLVPN_POOL"
+        set subnet 10.254.10.0 255.255.255.0
+    next
+end
+
+config firewall addrgrp
+    edit "LAN_NETWORKS"
+        set member "NET_VLAN100" "NET_VLAN200" "NET_VLAN300"
+    next
+end
+
+
+
+---------------------------------------------------------
+
+config firewall policy
+    edit 10
+        set name "VLAN100-to-AD-DNS-DHCP"
+        set srcintf "VLAN100"
+        set dstintf "port5"
+        set srcaddr "NET_VLAN100"
+        set dstaddr "AD_DNS_DHCP"
+        set action accept
+        set schedule "always"
+        set service "DCE-RPC" "DHCP" "DNS" "KERBEROS" "LDAP" "LDAP_UDP" "NTP" "ONC-RPC" "SMB"
+        set logtraffic all
+        set nat disable
+    next
+
+    edit 2
+        set name "VLAN200-to-AD-DNS-DHCP"
+        set srcintf "VLAN200"
+        set dstintf "port5"
+        set srcaddr "NET_VLAN200"
+        set dstaddr "AD_DNS_DHCP"
+        set action accept
+        set schedule "always"
+        set service "DCE-RPC" "DHCP" "DNS" "KERBEROS" "LDAP" "LDAP_UDP" "NTP" "ONC-RPC" "SMB"
+        set logtraffic all
+        set nat disable
+    next
+
+    edit 3
+        set name "VLAN300-to-AD-DNS-DHCP"
+        set srcintf "VLAN300"
+        set dstintf "port5"
+        set srcaddr "NET_VLAN300"
+        set dstaddr "AD_DNS_DHCP"
+        set action accept
+        set schedule "always"
+        set service "DCE-RPC" "DHCP" "DNS" "KERBEROS" "LDAP" "LDAP_UDP" "NTP" "ONC-RPC" "SMB"
+        set logtraffic all
+        set nat disable
+    next
+end
+
+
+
+---------------------------------------------------------
+
+config firewall policy
+    edit 4
+        set name "VLAN100-to-Internet"
+        set srcintf "VLAN100"
+        set dstintf "virtual-wan-link"
+        set srcaddr "NET_VLAN100"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set nat enable
+        set logtraffic all
+        set utm-status enable
+        set av-profile "default"
+        set webfilter-profile "default"
+        set dnsfilter-profile "default"
+        set application-list "default"
+        set ips-sensor "default"
+        set ssl-ssh-profile "certificate-inspection"
+    next
+
+    edit 5
+        set name "VLAN200-to-Internet"
+        set srcintf "VLAN200"
+        set dstintf "virtual-wan-link"
+        set srcaddr "NET_VLAN200"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set nat enable
+        set logtraffic all
+        set utm-status enable
+        set av-profile "default"
+        set webfilter-profile "default"
+        set dnsfilter-profile "default"
+        set application-list "default"
+        set ips-sensor "default"
+        set ssl-ssh-profile "certificate-inspection"
+    next
+
+    edit 6
+        set name "VLAN300-to-Internet"
+        set srcintf "VLAN300"
+        set dstintf "virtual-wan-link"
+        set srcaddr "NET_VLAN300"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set nat enable
+        set logtraffic all
+        set utm-status enable
+        set av-profile "default"
+        set webfilter-profile "default"
+        set dnsfilter-profile "default"
+        set application-list "default"
+        set ips-sensor "default"
+        set ssl-ssh-profile "certificate-inspection"
+    next
+end
+
+config firewall policy
+    edit 7
+        set name "LAN-to-DMZ-Web"
+        set srcintf "VLAN100" "VLAN200" "VLAN300"
+        set dstintf "port4"
+        set srcaddr "LAN_NETWORKS"
+        set dstaddr "DMZ_WEB01"
+        set action accept
+        set schedule "always"
+        set service "HTTP" "HTTPS"
+        set logtraffic all
+        set nat disable
+        #set ips-sensor "default"
+    next
+end
+
+config firewall policy
+    edit 8
+        set name "DENY-DMZ-to-Internal"
+        set srcintf "port4"
+        set dstintf "VLAN100" "VLAN200" "VLAN300" "port5"
+        set srcaddr "NET_DMZ"
+        set dstaddr "LAN_NETWORKS" "NET_MGMT"
+        set action deny
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+end
+
+config firewall policy
+    edit 9
+        set name "DMZ-to-Internet-Updates"
+        set srcintf "port4"
+        set dstintf "virtual-wan-link"
+        set srcaddr "DMZ_WEB01"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "DNS" "HTTP" "HTTPS" "NTP"
+        set nat enable
+        set logtraffic all
+        set utm-status enable
+        set av-profile "default"
+        #set ips-sensor "default"
+        set ssl-ssh-profile "certificate-inspection"
+    next
+end
+
+
+
+---------------------------------------------------------
+
+#config system admin
+    #edit "admin"
+        #set trusthost1 10.10.10.0 255.255.255.0
+    #next
+#end
+
+---------------------------------------------------------
+
+config system admin
+    edit "secadmin"
+        set accprofile "super_admin"
+        set vdom "root"
+        set password secadmin
+        #set trusthost1 10.10.10.0 255.255.255.0
+    next
+end
+
+
+---------------------------------------------------------
+
+config firewall vip
+    edit "VIP-WAN1-DMZ-WEB-HTTPS"
+        set extintf "port1"
+        set extip 172.16.1.2
+        set mappedip "10.10.40.10"
+        set portforward enable
+        set extport 443
+        set mappedport 443
+    next
+
+    edit "VIP-WAN1-DMZ-WEB-HTTP"
+        set extintf "port1"
+        set extip 172.16.1.2
+        set mappedip "10.10.40.10"
+        set portforward enable
+        set extport 80
+        set mappedport 80
+    next
+end
+
+#config firewall policy
+#    edit 10
+#        set name "WAN1-to-DMZ-Web-HTTPS"
+ #       set srcintf "port1"
+  #      set dstintf "port4"
+   #     set srcaddr "all"
+    #    set dstaddr "VIP-WAN1-DMZ-WEB-HTTPS"
+     #   set action accept
+      #  set schedule "always"
+#        set service "HTTPS"
+ #       set logtraffic all
+  #      set utm-status enable
+   #     #set ips-sensor "default"
+   # next
+
+#    edit 11
+ #       set name "WAN1-to-DMZ-Web-HTTP"
+  #      set srcintf "port1"
+   #     set dstintf "port4"
+    #    set srcaddr "all"
+     #   set dstaddr "VIP-WAN1-DMZ-WEB-HTTP"
+      #  set action accept
+       # set schedule "always"
+#        set service "HTTP"
+ #       set logtraffic all
+  #      set utm-status enable
+   #     #set ips-sensor "default"
+   # next
+#end
+
+config firewall policy
+    edit 10
+        set name "WAN-to-DMZ-Web-HTTPS"
+        set uuid 92447efa-c66e-51f1-4e68-ea7950c7f9da
+        set srcintf "virtual-wan-link"
+        set dstintf "port4"
+        set action accept
+        set srcaddr "all"
+        set dstaddr "VIP-WAN1-DMZ-WEB-HTTP" "VIP-WAN1-DMZ-WEB-HTTPS"
+        set schedule "always"
+        set service "HTTP" "HTTPS"
+        set utm-status enable
+        set logtraffic all
+    next
+end
+
+
+
+---------------------------------------------------------
+config user local
+    edit "vpn.user1"
+        set type password
+        set passwd Passw0rd
+    next
+end
+
+config user group
+    edit "SSLVPN-Users"
+        set member "vpn.user1"
+    next
+end
+
+---------------------------------------------------------
+config firewall address
+    edit "SSLVPN_TUNNEL_POOL"
+        set type iprange
+        set start-ip 10.254.10.10
+        set end-ip 10.254.10.200
+    next
+end
+
+---------------------------------------------------------
+config vpn ssl web portal
+    edit "full-access"
+        set tunnel-mode enable
+        set web-mode disable
+        set split-tunneling enable
+        set split-tunneling-routing-address "NET_VLAN100" "NET_VLAN200" "NET_VLAN300" "NET_MGMT" "NET_DMZ"
+    next
+end
+
+config vpn ssl settings
+    set servercert "self-sign"
+    set source-interface "port1"
+    set source-address "all"
+    set default-portal "full-access"
+    set tunnel-ip-pools "SSLVPN_TUNNEL_POOL"
+    set dns-server1 192.168.243.140
+    set dns-suffix "corp.lab"
+
+    config authentication-rule
+        edit 1
+            set groups "SSLVPN-Users"
+            set portal "full-access"
+        next
+    end
+end
+
+
+config firewall policy
+    edit 11
+        set name "SSLVPN-to-Internal"
+        set srcintf "ssl.root"
+        set dstintf "VLAN100" "VLAN200" "VLAN300" "port5" "port4"
+        set srcaddr "SSLVPN_TUNNEL_POOL"
+        set dstaddr "LAN_NETWORKS" "NET_MGMT" "NET_DMZ"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+        set nat disable
+    next
+end
+
+
+---------------------------------------------------------
+*********************************************************
+Recommended operational controls:
+
+- Change the default administrator password.
+- Create named administrator accounts.
+- Disable HTTP administrative access.
+- Limit HTTPS and SSH administration to the management network.
+- Configure trusted hosts for all admin accounts.
+- Enable NTP.
+- Send logs to FortiAnalyzer, syslog, or FortiCloud.
+- Enable configuration backups.
+- Use MFA for SSL-VPN.
+- Do not allow WAN administrative access.
+- Keep FortiOS updated to a supported release.
+- Enable logging on all allow and deny policies.
+- Use least privilege between VLANs.
+- Do not permit DMZ-initiated access to internal networks.
+- Use a separate management VLAN and preferably a dedicated out-of-band management network.
+*********************************************************
+---------------------------------------------------------
+
+Connectivity tests from FortiGate
+
+execute ping 172.16.1.1
+execute ping 172.16.2.1
+execute ping 10.10.10.10
+execute ping 10.10.40.10
+execute ping 1.1.1.1
+
+Troubleshooting commands
+
+diagnose debug reset
+diagnose debug flow filter clear
+diagnose debug flow filter addr 10.100.0.50
+diagnose debug flow show console enable
+diagnose debug enable
+diagnose debug flow trace start 20
+
+diagnose debug disable
+diagnose debug reset
+
+diagnose sys session list
+
+diagnose sniffer packet any "port 67 or port 68" 4
+
+
+---------------------------------------------------------
+
+
+
